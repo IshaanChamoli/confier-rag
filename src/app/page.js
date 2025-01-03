@@ -59,12 +59,38 @@ export default function Home() {
       const chatbotSlug = chatbotTitle.trim().toLowerCase().replace(/\s+/g, '-');
       const shareUrl = `${userSlug}/${chatbotSlug}`;
       
+      // Split document into chunks and get embeddings
+      const allChunks = uploadedFile.content.split(/(?<=[.!?])\s+/)
+        .filter(chunk => chunk.trim())
+        .slice(0, 10); // Only process first 10 chunks
+
+      const processedChunks = [];
+      
+      // Process each chunk
+      for (const chunk of allChunks) {
+        const response = await fetch('/api/embeddings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: chunk }),
+        });
+        
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        
+        processedChunks.push({
+          text: chunk,
+          embedding: data.embedding
+        });
+      }
+      
       const newChatbot = {
         id: Date.now(),
         shareId: shareUrl,
         name: chatbotTitle.trim(),
         data: uploadedFile.content,
-        processedChunks: [], // Initialize empty array for processed chunks
+        processedChunks: processedChunks,
         firstWords: uploadedFile.content.split(' ').slice(0, 10).join(' ')
       };
       
@@ -165,6 +191,44 @@ export default function Home() {
       setIsTyping(false);
     }
   };
+
+  useEffect(() => {
+    const loadUserChatbots = async () => {
+      if (session?.user?.email) {
+        try {
+          const response = await fetch('/api/pinecone/fetch-chatbots', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              userEmail: session.user.email 
+            }),
+          });
+
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to fetch chatbots');
+          }
+
+          if (data.chatbots?.length > 0) {
+            // Merge with any existing local chatbots
+            setChatbots(prev => {
+              const existingIds = prev.map(bot => bot.shareId);
+              const newBots = data.chatbots.filter(bot => !existingIds.includes(bot.shareId));
+              return [...prev, ...newBots];
+            });
+          }
+        } catch (error) {
+          console.error('Error loading chatbots:', error);
+          // Optionally show error to user
+        }
+      }
+    };
+
+    loadUserChatbots();
+  }, [session]); // Run when session changes (user logs in)
 
   if (status === "loading") {
     return (

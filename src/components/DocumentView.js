@@ -1,113 +1,54 @@
 'use client';
 import { useState, useEffect } from 'react';
+import LoadingSpinner from './LoadingSpinner';
 
-export default function DocumentView({ document, processedChunks: existingChunks, onChunksProcessed, chatbotName, userName, userEmail }) {
+export default function DocumentView({ document, chatbotName, userEmail }) {
   const [chunks, setChunks] = useState([]);
-  const [processedChunks, setProcessedChunks] = useState(existingChunks || []);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
+  const [processedChunks, setProcessedChunks] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [totalChunks, setTotalChunks] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
 
-  // Split document into chunks once when component mounts
   useEffect(() => {
-    if (document) {
-      const allChunks = document.split(/(?<=[.!?])\s+/)
-        .filter(chunk => chunk.trim());
-      const chunksToProcess = allChunks.slice(0, 10);
-      setChunks(allChunks);
-      setTotalChunks(Math.min(chunksToProcess.length, 10));
-    }
-  }, [document]);
-
-  // Only process chunks if they haven't been processed before
-  useEffect(() => {
-    if (existingChunks?.length === totalChunks) {
-      // If we have all chunks processed, just display them
-      setProcessedChunks(existingChunks);
-      setCurrentChunkIndex(totalChunks);
-      setIsProcessing(false);
-      return;
-    }
-
-    const processNextChunk = async () => {
-      if (currentChunkIndex >= totalChunks) {
-        setIsProcessing(false);
-        return;
-      }
-
-      const chunkText = chunks[currentChunkIndex]?.trim();
-      if (!chunkText) {
-        setCurrentChunkIndex(prev => prev + 1);
-        return;
-      }
-
-      setIsProcessing(true);
+    const fetchChunks = async () => {
       try {
-        const response = await fetch('/api/embeddings', {
+        const response = await fetch('/api/pinecone/fetch-chunks', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ text: chunkText }),
+          body: JSON.stringify({ 
+            userEmail,
+            chatbotName
+          }),
         });
+
         const data = await response.json();
-
-        if (data.error) {
-          throw new Error(data.error);
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch chunks');
         }
 
-        const newProcessedChunks = [...processedChunks, {
-          text: chunkText,
-          embedding: data.embedding
-        }];
-        
-        setProcessedChunks(newProcessedChunks);
-        if (onChunksProcessed) {
-          onChunksProcessed(newProcessedChunks);
-        }
+        console.log('Fetched chunks:', data.chunks); // Debug log
 
-        setCurrentChunkIndex(prev => prev + 1);
+        // Don't split document again, use the chunks from Pinecone directly
+        setChunks(data.chunks.map(chunk => chunk.text));
+        setProcessedChunks(data.chunks);
+        setTotalChunks(data.chunks.length);
+
       } catch (error) {
-        console.error('Error processing chunk:', error);
-        setIsProcessing(false);
+        console.error('Error fetching chunks:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    if (chunks.length > 0 && currentChunkIndex < totalChunks) {
-      processNextChunk();
+    if (chatbotName && userEmail) {
+      fetchChunks();
     }
-  }, [chunks, currentChunkIndex, totalChunks, existingChunks, onChunksProcessed]);
+  }, [chatbotName, userEmail]);
 
-  const handlePineconeUpload = async () => {
-    setIsUploading(true);
-    try {
-      const response = await fetch('/api/pinecone/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          vectors: processedChunks,
-          chatbotName,
-          userName,
-          userEmail,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to upload to Pinecone');
-      }
-
-      alert('Successfully uploaded to Pinecone!');
-    } catch (error) {
-      console.error('Pinecone upload error:', error);
-      alert('Failed to upload to Pinecone: ' + error.message);
-    } finally {
-      setIsUploading(false);
-    }
-  };
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
 
   return (
     <div className="flex h-full max-h-[calc(100vh-200px)] relative">
@@ -116,76 +57,41 @@ export default function DocumentView({ document, processedChunks: existingChunks
         <div className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur-sm border-b p-4 shadow-sm">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Text Chunks</h3>
-            <div className="flex items-center gap-4">
-              {currentChunkIndex >= totalChunks ? (
-                <>
-                  <div className="flex items-center gap-2 text-sm text-green-600">
-                    <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                    {totalChunks < 10 ? 
-                      `All ${totalChunks} chunks converted` : 
-                      'First 10 chunks converted'}
-                  </div>
-                  <button
-                    onClick={handlePineconeUpload}
-                    disabled={isUploading}
-                    className="ml-4 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isUploading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        Uploading...
-                      </>
-                    ) : (
-                      'Upload to Pinecone'
-                    )}
-                  </button>
-                </>
-              ) : isProcessing && (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-500 border-t-transparent"></div>
-                  Processing chunk {currentChunkIndex + 1}/{totalChunks}...
-                </div>
-              )}
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <div className="h-2 w-2 rounded-full bg-green-500"></div>
+              {totalChunks < 10 ? 
+                `All ${totalChunks} chunks converted` : 
+                'First 10 chunks converted'}
             </div>
           </div>
         </div>
 
         {/* Chunks Container */}
         <div className="p-4 space-y-4">
-          {chunks.map((chunk, index) => {
-            const processedChunk = processedChunks.find(pc => pc.text === chunk);
-            
-            return (
-              <div key={index} className="flex gap-4">
-                {/* Embeddings Column (only for first 10) */}
-                {index < 10 && (
-                  <div className="w-1/3 bg-white border rounded-lg shadow-sm p-4">
-                    <h4 className="font-medium mb-2">Embedding {index + 1}</h4>
-                    {processedChunk ? (
-                      <div className="text-xs text-gray-500 space-y-1">
-                        {processedChunk.embedding.slice(0, 10).map((value, i) => (
-                          <div key={i} className="font-mono">{value.toFixed(6)}</div>
-                        ))}
-                        {processedChunk.embedding.length > 10 && (
-                          <div className="text-center mt-1">...</div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-400 italic">
-                        {index === currentChunkIndex ? 'Processing...' : 'Waiting...'}
-                      </div>
+          {processedChunks.map((chunk, index) => (
+            <div key={index} className="flex gap-4">
+              {/* Embeddings Column (only for first 10) */}
+              {index < 10 && (
+                <div className="w-1/3 bg-white border rounded-lg shadow-sm p-4">
+                  <h4 className="font-medium mb-2">Embedding {index + 1}</h4>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    {chunk.embedding.slice(0, 10).map((value, i) => (
+                      <div key={i} className="font-mono">{value.toFixed(6)}</div>
+                    ))}
+                    {chunk.embedding.length > 10 && (
+                      <div className="text-center mt-1">...</div>
                     )}
                   </div>
-                )}
-
-                {/* Text Chunk */}
-                <div className={`${index < 10 ? 'w-2/3' : 'w-full'} bg-white border rounded-lg shadow-sm p-4`}>
-                  <h4 className="font-medium mb-2">Chunk {index + 1}</h4>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{chunk}</p>
                 </div>
+              )}
+
+              {/* Text Chunk */}
+              <div className={`${index < 10 ? 'w-2/3' : 'w-full'} bg-white border rounded-lg shadow-sm p-4`}>
+                <h4 className="font-medium mb-2">Chunk {index + 1}</h4>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{chunk.text}</p>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
     </div>
