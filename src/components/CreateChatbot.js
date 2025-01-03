@@ -23,11 +23,10 @@ export default function CreateChatbot({
       // Split into chunks and move to next step
       const allChunks = content.split(/(?<=[.!?])\s+/)
         .filter(chunk => chunk.trim());
-      const chunksToProcess = allChunks.slice(0, 10);
       setChunks(allChunks);
-      setTotalChunks(Math.min(chunksToProcess.length, 10));
+      setTotalChunks(allChunks.length); // Process all chunks
       setStep(2);
-      processChunks(chunksToProcess);
+      processChunks(allChunks); // Process all chunks
     }
   };
 
@@ -172,9 +171,7 @@ export default function CreateChatbot({
                 <>
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                    {totalChunks < 10 ? 
-                      `All ${totalChunks} chunks converted` : 
-                      'First 10 chunks converted'}
+                    {`All ${totalChunks} chunks converted`}
                   </div>
                   <button
                     onClick={handlePineconeUpload}
@@ -200,13 +197,13 @@ export default function CreateChatbot({
             </div>
           </div>
 
-          <div className="p-4 space-y-4">
-            {chunks.map((chunk, index) => {
-              const processedChunk = processedChunks.find(pc => pc.text === chunk);
-              
-              return (
-                <div key={index} className="flex gap-4">
-                  {index < 10 && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="space-y-4">
+              {chunks.map((chunk, index) => {
+                const processedChunk = processedChunks.find(pc => pc.text === chunk);
+                
+                return (
+                  <div key={index} className="flex gap-4">
                     <div className="w-1/3 bg-white border rounded-lg shadow-sm p-4">
                       <h4 className="font-medium mb-2">Embedding {index + 1}</h4>
                       {processedChunk ? (
@@ -224,15 +221,15 @@ export default function CreateChatbot({
                         </div>
                       )}
                     </div>
-                  )}
 
-                  <div className={`${index < 10 ? 'w-2/3' : 'w-full'} bg-white border rounded-lg shadow-sm p-4`}>
-                    <h4 className="font-medium mb-2">Chunk {index + 1}</h4>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{chunk}</p>
+                    <div className="w-2/3 bg-white border rounded-lg shadow-sm p-4">
+                      <h4 className="font-medium mb-2">Chunk {index + 1}</h4>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{chunk}</p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

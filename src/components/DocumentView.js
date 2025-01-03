@@ -59,9 +59,7 @@ export default function DocumentView({ document, chatbotName, userEmail }) {
             <h3 className="text-lg font-semibold">Text Chunks</h3>
             <div className="flex items-center gap-2 text-sm text-green-600">
               <div className="h-2 w-2 rounded-full bg-green-500"></div>
-              {totalChunks < 10 ? 
-                `All ${totalChunks} chunks converted` : 
-                'First 10 chunks converted'}
+              {`All ${totalChunks} chunks converted`}
             </div>
           </div>
         </div>
@@ -70,23 +68,21 @@ export default function DocumentView({ document, chatbotName, userEmail }) {
         <div className="p-4 space-y-4">
           {processedChunks.map((chunk, index) => (
             <div key={index} className="flex gap-4">
-              {/* Embeddings Column (only for first 10) */}
-              {index < 10 && (
-                <div className="w-1/3 bg-white border rounded-lg shadow-sm p-4">
-                  <h4 className="font-medium mb-2">Embedding {index + 1}</h4>
-                  <div className="text-xs text-gray-500 space-y-1">
-                    {chunk.embedding.slice(0, 10).map((value, i) => (
-                      <div key={i} className="font-mono">{value.toFixed(6)}</div>
-                    ))}
-                    {chunk.embedding.length > 10 && (
-                      <div className="text-center mt-1">...</div>
-                    )}
-                  </div>
+              {/* Embeddings Column */}
+              <div className="w-1/3 bg-white border rounded-lg shadow-sm p-4">
+                <h4 className="font-medium mb-2">Embedding {index + 1}</h4>
+                <div className="text-xs text-gray-500 space-y-1">
+                  {chunk.embedding.slice(0, 10).map((value, i) => (
+                    <div key={i} className="font-mono">{value.toFixed(6)}</div>
+                  ))}
+                  {chunk.embedding.length > 10 && (
+                    <div className="text-center mt-1">...</div>
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* Text Chunk */}
-              <div className={`${index < 10 ? 'w-2/3' : 'w-full'} bg-white border rounded-lg shadow-sm p-4`}>
+              <div className="w-2/3 bg-white border rounded-lg shadow-sm p-4">
                 <h4 className="font-medium mb-2">Chunk {index + 1}</h4>
                 <p className="text-sm text-gray-700 whitespace-pre-wrap">{chunk.text}</p>
               </div>
