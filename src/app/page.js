@@ -1,101 +1,430 @@
-import Image from "next/image";
+'use client';
+import { useSession, signIn, signOut } from "next-auth/react";
+import { useState, useRef, useEffect } from 'react';
+import FileUpload from '@/components/FileUpload';
+import Image from 'next/image';
+import { nanoid } from 'nanoid';
+import { handleMessage, createChatMessage } from '@/utils/chat';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const { data: session, status } = useSession();
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [chatbots, setChatbots] = useState([]);
+  const [selectedChatbot, setSelectedChatbot] = useState(null);
+  const [view, setView] = useState(null); // 'document' or 'chat'
+  const [messagesMap, setMessagesMap] = useState({});
+  const [newMessage, setNewMessage] = useState('');
+  const [chatbotTitle, setChatbotTitle] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Add ref for chat container
+  const chatContainerRef = useRef(null);
+
+  // Add useEffect to scroll to bottom when messages change
+  useEffect(() => {
+    if (chatContainerRef.current && selectedChatbot) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messagesMap, selectedChatbot]);
+
+  const handleSignIn = async () => {
+    try {
+      await signIn('google', {
+        callbackUrl: '/',
+        redirect: true
+      });
+    } catch (error) {
+      console.error('Sign in error:', error);
+    }
+  };
+
+  const handleFileUpload = (fileData) => {
+    setUploadedFile(fileData);
+    setChatbotTitle(fileData.name.replace('.txt', ''));
+    setIsUploading(false);
+  };
+
+  const handleCreateChatbot = () => {
+    if (!uploadedFile || !chatbotTitle.trim()) return;
+    
+    // Create URL-friendly IDs from user name and chatbot title
+    const userSlug = session.user.name.toLowerCase().replace(/\s+/g, '');
+    const chatbotSlug = chatbotTitle.trim().toLowerCase().replace(/\s+/g, '-');
+    const shareUrl = `${userSlug}/${chatbotSlug}`;
+    
+    const newChatbot = {
+      id: Date.now(),
+      shareId: shareUrl,
+      name: chatbotTitle.trim(),
+      data: uploadedFile.content,
+      // Store first 10 words separately for testing
+      firstWords: uploadedFile.content.split(' ').slice(0, 10).join(' ')
+    };
+    
+    setChatbots(prev => [...prev, newChatbot]);
+    // Store in localStorage for testing
+    localStorage.setItem(shareUrl, JSON.stringify(newChatbot));
+    
+    setUploadedFile(null);
+    setChatbotTitle('');
+    setIsUploading(false);
+  };
+
+  const handleChatbotClick = (botId) => {
+    if (selectedChatbot === botId) {
+      setSelectedChatbot(null); // collapse if clicking the same bot
+    } else {
+      setSelectedChatbot(botId);
+      setView(null); // reset view when selecting new bot
+    }
+  };
+
+  const handleViewSelect = (botId, viewType) => {
+    setSelectedChatbot(botId);
+    setView(viewType);
+  };
+
+  const handleTextEdit = (newContent, botId = null) => {
+    if (botId) {
+      // Update existing chatbot's content
+      setChatbots(prev => prev.map(bot => 
+        bot.id === botId 
+          ? { ...bot, data: newContent }
+          : bot
+      ));
+    } else {
+      // Update uploaded file content
+      setUploadedFile(prev => ({ ...prev, content: newContent }));
+    }
+  };
+
+  const handleSendMessage = async (botId) => {
+    if (!newMessage.trim() || isTyping) return;
+
+    const currentBot = chatbots.find(b => b.id === botId);
+    if (!currentBot) return;
+
+    const messageText = newMessage;
+    setNewMessage(''); // Clear input immediately
+    
+    // Immediately show user message
+    const userMessage = createChatMessage(messageText, true);
+    setMessagesMap(prev => ({
+      ...prev,
+      [botId]: [...(prev[botId] || []), userMessage]
+    }));
+
+    setIsTyping(true);
+
+    try {
+      // Get bot response
+      const messages = await handleMessage(
+        messageText, 
+        currentBot, 
+        messagesMap[botId] || []
+      );
+
+      if (messages?.error) {
+        setMessagesMap(prev => ({
+          ...prev,
+          [botId]: [
+            ...(prev[botId] || []),
+            createChatMessage("I apologize, but I encountered an error. Please try again.", false)
+          ]
+        }));
+        return;
+      }
+
+      // Add only the bot message since user message is already shown
+      setMessagesMap(prev => ({
+        ...prev,
+        [botId]: [...(prev[botId] || []), messages.botMessage]
+      }));
+    } catch (error) {
+      console.error('Send message error:', error);
+      setMessagesMap(prev => ({
+        ...prev,
+        [botId]: [
+          ...(prev[botId] || []),
+          createChatMessage("I apologize, but I encountered an error. Please try again.", false)
+        ]
+      }));
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+          <h1 className="text-2xl font-bold mb-6">Welcome to ChatBot Builder</h1>
+          <p className="text-gray-600 mb-8">Sign in to create and manage your custom chatbots</p>
+          <button
+            onClick={handleSignIn}
+            className="flex items-center gap-2 bg-white text-gray-700 px-6 py-2 rounded-md border hover:bg-gray-50 transition-colors mx-auto"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+              <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
+                <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
+                <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
+                <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
+                <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
+              </g>
+            </svg>
+            Sign in with Google
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Sidebar - make it narrower */}
+      <div className="w-56 bg-white border-r flex flex-col">
+        <div className="p-4 border-b">
+          <div className="flex items-center gap-3">
+            {session.user?.image && (
+              <Image 
+                src={session.user.image} 
+                alt="Profile picture"
+                width={32}
+                height={32}
+                className="rounded-full"
+              />
+            )}
+            <span className="font-semibold truncate">
+              {session.user?.name?.split(' ')[0]}
+            </span>
+          </div>
+        </div>
+        
+        {/* Chatbot List */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <button 
+            className="w-full bg-blue-500 text-white rounded-md py-2 mb-4 hover:bg-blue-600 transition-colors"
+            onClick={() => setIsUploading(true)}
+          >
+            + New Chatbot
+          </button>
+          
+          <div className="space-y-2">
+            {chatbots.length > 0 ? (
+              chatbots.map(bot => (
+                <div key={bot.id} className="border rounded-md overflow-hidden">
+                  <div 
+                    className={`p-3 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors flex items-center justify-between ${selectedChatbot === bot.id ? 'bg-gray-100' : ''}`}
+                    onClick={() => handleChatbotClick(bot.id)}
+                  >
+                    <p className="font-medium text-sm">{bot.name}</p>
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      className={`h-4 w-4 transition-transform ${selectedChatbot === bot.id ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                  
+                  {/* Dropdown Menu */}
+                  {selectedChatbot === bot.id && (
+                    <div className="border-t">
+                      <button
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${view === 'document' && selectedChatbot === bot.id ? 'bg-blue-50 text-blue-600' : ''}`}
+                        onClick={() => handleViewSelect(bot.id, 'document')}
+                      >
+                        📄 View Document
+                      </button>
+                      <button
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${view === 'chat' && selectedChatbot === bot.id ? 'bg-blue-50 text-blue-600' : ''}`}
+                        onClick={() => handleViewSelect(bot.id, 'chat')}
+                      >
+                        💬 Open Chat
+                      </button>
+                      <button
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                        onClick={() => {
+                          const shareUrl = `${window.location.origin}/share/${bot.shareId}`;
+                          navigator.clipboard.writeText(shareUrl);
+                          // Optional: Show a toast notification that the link was copied
+                        }}
+                      >
+                        🔗 Copy Share Link
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">Your chatbots will appear here</p>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t">
+          <button
+            onClick={() => signOut()}
+            className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - reduce padding */}
+        <div className="bg-white border-b px-6 py-3">
+          <h1 className="text-xl font-semibold">ChatBot Builder</h1>
+        </div>
+
+        {/* Chat Area - reduce padding and increase max-width */}
+        <div className="flex-1 p-4 flex">
+          <div className="max-w-6xl w-full mx-auto flex flex-col flex-1">
+            {isUploading ? (
+              <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
+                <h2 className="text-xl font-semibold mb-4">Upload Training Data</h2>
+                <FileUpload onFileUpload={handleFileUpload} />
+              </div>
+            ) : uploadedFile ? (
+              <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
+                <div className="mb-4">
+                  <label htmlFor="chatbotTitle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Chatbot Name
+                  </label>
+                  <input
+                    id="chatbotTitle"
+                    type="text"
+                    value={chatbotTitle}
+                    onChange={(e) => setChatbotTitle(e.target.value)}
+                    className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter a name for your chatbot"
+                  />
+                </div>
+                
+                <div className="flex-1 flex flex-col min-h-0">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Content
+                  </label>
+                  <textarea
+                    className="flex-1 whitespace-pre-wrap text-sm text-gray-600 bg-gray-50 p-4 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={uploadedFile.content}
+                    onChange={(e) => handleTextEdit(e.target.value)}
+                  />
+                </div>
+                <button 
+                  className="mt-4 bg-green-500 text-white rounded-md py-2 px-4 hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleCreateChatbot}
+                  disabled={!chatbotTitle.trim()}
+                >
+                  Create Chatbot
+                </button>
+              </div>
+            ) : view === 'document' ? (
+              <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
+                <h2 className="text-xl font-semibold mb-4">
+                  {chatbots.find(b => b.id === selectedChatbot)?.name}
+                </h2>
+                <div className="flex-1 flex flex-col min-h-0">
+                  <pre 
+                    className="flex-1 whitespace-pre-wrap text-sm text-gray-600 bg-gray-50 p-4 rounded-md overflow-y-auto h-full"
+                    style={{ maxHeight: 'calc(100vh - 200px)' }}
+                  >
+                    {chatbots.find(b => b.id === selectedChatbot)?.data}
+                  </pre>
+                </div>
+              </div>
+            ) : view === 'chat' ? (
+              <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
+                <h2 className="text-xl font-semibold mb-4 pb-3 border-b">
+                  Chat with {chatbots.find(b => b.id === selectedChatbot)?.name}
+                </h2>
+                
+                <div 
+                  ref={chatContainerRef}
+                  className="flex-1 overflow-y-auto mb-4 space-y-4 max-h-[calc(100vh-250px)] pr-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 bg-gray-50 p-4 rounded-lg smooth-scroll"
+                >
+                  {(messagesMap[selectedChatbot] || []).map((message, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} my-2`}
+                    >
+                      <div 
+                        className={`max-w-[80%] rounded-lg p-4 shadow-sm transition-all duration-200 ${
+                          message.role === 'user' 
+                            ? 'bg-blue-500 text-white mr-2 hover:bg-blue-600' 
+                            : 'bg-white text-gray-800 ml-2 hover:shadow-md'
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
+                  ))}
+                  {isTyping && (
+                    <div className="flex justify-start my-2">
+                      <div className="bg-white text-gray-800 ml-2 rounded-lg p-4 shadow-sm typing-indicator">
+                        <span style={{"--delay": 0}}>.</span>
+                        <span style={{"--delay": 1}}>.</span>
+                        <span style={{"--delay": 2}}>.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(selectedChatbot)}
+                      placeholder="Type your message..."
+                      disabled={isTyping}
+                      className={`flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
+                        isTyping ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    />
+                    <button
+                      onClick={() => handleSendMessage(selectedChatbot)}
+                      disabled={isTyping || !newMessage.trim()}
+                      className={`bg-blue-500 text-white px-4 py-2 rounded-lg transition-all duration-200 ${
+                        isTyping || !newMessage.trim() 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:bg-blue-600 hover:shadow-md'
+                      }`}
+                    >
+                      {isTyping ? 'Sending...' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm p-6 text-center">
+                <h2 className="text-xl font-semibold mb-2">Welcome to ChatBot Builder! 🤖</h2>
+                <p className="text-gray-600">
+                  Create your first chatbot by clicking the "New Chatbot" button in the sidebar.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
