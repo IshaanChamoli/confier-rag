@@ -7,6 +7,7 @@ export default function DocumentView({ document, processedChunks: existingChunks
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Split document into chunks once when component mounts
   useEffect(() => {
@@ -78,6 +79,31 @@ export default function DocumentView({ document, processedChunks: existingChunks
     }
   }, [chunks, currentChunkIndex, totalChunks, existingChunks, onChunksProcessed]);
 
+  const handlePineconeUpload = async () => {
+    setIsUploading(true);
+    try {
+      const response = await fetch('/api/pinecone/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ vectors: processedChunks }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload to Pinecone');
+      }
+
+      alert('Successfully uploaded to Pinecone!');
+    } catch (error) {
+      console.error('Pinecone upload error:', error);
+      alert('Failed to upload to Pinecone: ' + error.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="flex h-full max-h-[calc(100vh-200px)] relative">
       <div className="w-full overflow-y-auto bg-gray-50 rounded-lg">
@@ -85,19 +111,37 @@ export default function DocumentView({ document, processedChunks: existingChunks
         <div className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur-sm border-b p-4 shadow-sm">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Text Chunks</h3>
-            {currentChunkIndex >= totalChunks ? (
-              <div className="flex items-center gap-2 text-sm text-green-600">
-                <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                {totalChunks < 10 ? 
-                  `All ${totalChunks} chunks converted` : 
-                  'First 10 chunks converted'}
-              </div>
-            ) : isProcessing && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-500 border-t-transparent"></div>
-                Processing chunk {currentChunkIndex + 1}/{totalChunks}...
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              {currentChunkIndex >= totalChunks ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                    {totalChunks < 10 ? 
+                      `All ${totalChunks} chunks converted` : 
+                      'First 10 chunks converted'}
+                  </div>
+                  <button
+                    onClick={handlePineconeUpload}
+                    disabled={isUploading}
+                    className="ml-4 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isUploading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        Uploading...
+                      </>
+                    ) : (
+                      'Upload to Pinecone'
+                    )}
+                  </button>
+                </>
+              ) : isProcessing && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-500 border-t-transparent"></div>
+                  Processing chunk {currentChunkIndex + 1}/{totalChunks}...
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
