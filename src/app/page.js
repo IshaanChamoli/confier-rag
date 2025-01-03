@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { handleMessage, createChatMessage } from '@/utils/chat';
 import DocumentView from '@/components/DocumentView';
 import { chunkText } from '@/utils/textProcessing';
+import CreateChatbot from '@/components/CreateChatbot';
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -384,46 +385,18 @@ export default function Home() {
                 <FileUpload onFileUpload={handleFileUpload} />
               </div>
             ) : uploadedFile ? (
-              <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
-                <div className="mb-4">
-                  <label htmlFor="chatbotTitle" className="block text-sm font-medium text-gray-700 mb-1">
-                    Chatbot Name
-                  </label>
-                  <input
-                    id="chatbotTitle"
-                    type="text"
-                    value={chatbotTitle}
-                    onChange={(e) => setChatbotTitle(e.target.value)}
-                    className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter a name for your chatbot"
-                  />
-                </div>
-                
-                <div className="flex-1 flex flex-col min-h-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Content
-                  </label>
-                  <textarea
-                    className="flex-1 whitespace-pre-wrap text-sm text-gray-600 bg-gray-50 p-4 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={uploadedFile.content}
-                    onChange={(e) => handleTextEdit(e.target.value)}
-                  />
-                </div>
-                <button 
-                  className={`mt-4 bg-green-500 text-white rounded-md py-2 px-4 hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
-                  onClick={handleCreateChatbot}
-                  disabled={!chatbotTitle.trim() || isProcessing}
-                >
-                  {isProcessing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      Processing Document...
-                    </>
-                  ) : (
-                    'Create Chatbot'
-                  )}
-                </button>
-              </div>
+              <CreateChatbot
+                uploadedFile={uploadedFile}
+                chatbotTitle={chatbotTitle}
+                setChatbotTitle={setChatbotTitle}
+                onComplete={(newChatbot) => {
+                  setChatbots(prev => [...prev, newChatbot]);
+                  setUploadedFile(null);
+                  setChatbotTitle('');
+                  setIsUploading(false);
+                }}
+                session={session}
+              />
             ) : view === 'document' ? (
               <div className="bg-white rounded-lg shadow-sm p-6 flex flex-col flex-1">
                 <h2 className="text-xl font-semibold mb-4">
