@@ -1,12 +1,34 @@
 // Function to get bot response from API
-export const getBotResponse = async (message, messageHistory = []) => {
+export const getBotResponse = async (message, messageHistory = [], chatbotData = null) => {
   try {
+    // First, search for relevant context if chatbot data is provided
+    let context = [];
+    if (chatbotData?.name && chatbotData?.userEmail) {
+      const searchResponse = await fetch('/api/pinecone/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: message,
+          userEmail: chatbotData.userEmail,
+          chatbotName: chatbotData.name
+        }),
+      });
+
+      if (searchResponse.ok) {
+        const { matches } = await searchResponse.json();
+        context = matches;
+      }
+    }
+
+    // Get chat response with context
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message, messageHistory }),
+      body: JSON.stringify({ message, messageHistory, context }),
     });
 
     if (!response.ok) {
@@ -14,32 +36,46 @@ export const getBotResponse = async (message, messageHistory = []) => {
     }
 
     const data = await response.json();
-    return data.response;
+    return {
+      response: data.response,
+      references: data.references?.map(ref => ({
+        text: ref.text,
+        score: ref.score,
+        chunkIndex: ref.chunkIndex
+      }))
+    };
   } catch (error) {
     console.error('API error:', error);
-    return "I apologize, but I encountered an error. Please try again.";
+    return {
+      response: "I apologize, but I encountered an error. Please try again.",
+      references: []
+    };
   }
 };
 
 // Shared message handler
-export const createChatMessage = (message, isUser = true) => {
-  return {
+export const createChatMessage = (message, isUser = true, references = []) => {
+  const chatMessage = {
     role: isUser ? 'user' : 'assistant',
-    content: message
+    content: message,
+    references
   };
+  console.log('Created chat message:', chatMessage); // Debug log
+  return chatMessage;
 };
 
 // Shared send message handler
 export const handleMessage = async (newMessage, chatbotData, messageHistory = []) => {
   if (!newMessage.trim()) return null;
 
-  // Create user message
   const userMessage = createChatMessage(newMessage, true);
   
   try {
-    // Get bot response from OpenAI
-    const botResponse = await getBotResponse(newMessage, messageHistory);
-    const botMessage = createChatMessage(botResponse, false);
+    const { response, references } = await getBotResponse(newMessage, messageHistory, chatbotData);
+    console.log('Got response with references:', { response, references }); // Debug log
+    
+    const botMessage = createChatMessage(response, false, references);
+    console.log('Created bot message:', botMessage); // Debug log
 
     return {
       userMessage,

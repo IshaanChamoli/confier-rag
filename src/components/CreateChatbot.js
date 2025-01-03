@@ -93,10 +93,13 @@ export default function CreateChatbot({
         name: chatbotTitle.trim(),
         data: content,
         processedChunks,
-        firstWords: content.split(' ').slice(0, 10).join(' ')
+        firstWords: content.split(' ').slice(0, 10).join(' '),
+        userEmail: session.user.email,
+        userName: session.user.name
       };
 
       onComplete(newChatbot);
+      localStorage.setItem(shareUrl, JSON.stringify(newChatbot));
     } catch (error) {
       console.error('Error:', error);
       alert('Failed to create chatbot: ' + error.message);

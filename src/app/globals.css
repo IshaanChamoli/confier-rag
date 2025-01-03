@@ -79,3 +79,14 @@ body {
   animation: pulseTyping 1s infinite;
   animation-delay: calc(var(--delay) * 0.2s);
 }
+
+/* Add these to your existing styles */
+.group:hover .group-hover\:visible {
+  transition: visibility 0s, opacity 0.2s ease-in-out;
+  opacity: 1;
+}
+
+.group .invisible {
+  transition: visibility 0s linear 0.2s, opacity 0.2s ease-in-out;
+  opacity: 0;
+}

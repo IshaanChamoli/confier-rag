@@ -24,7 +24,7 @@ export async function POST(request) {
       values: vec.embedding,
       metadata: {
         text: vec.text,
-        chunkIndex: i,
+        chunkIndex: String(i),
         timestamp: new Date().toISOString(),
         source: 'chatbot-training',
         userName: userName,
