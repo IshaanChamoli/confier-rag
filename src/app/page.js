@@ -5,6 +5,8 @@ import FileUpload from '@/components/FileUpload';
 import Image from 'next/image';
 import { nanoid } from 'nanoid';
 import { handleMessage, createChatMessage } from '@/utils/chat';
+import DocumentView from '@/components/DocumentView';
+import { chunkText } from '@/utils/textProcessing';
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -17,6 +19,7 @@ export default function Home() {
   const [newMessage, setNewMessage] = useState('');
   const [chatbotTitle, setChatbotTitle] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Add ref for chat container
   const chatContainerRef = useRef(null);
@@ -45,30 +48,38 @@ export default function Home() {
     setIsUploading(false);
   };
 
-  const handleCreateChatbot = () => {
+  const handleCreateChatbot = async () => {
     if (!uploadedFile || !chatbotTitle.trim()) return;
     
-    // Create URL-friendly IDs from user name and chatbot title
-    const userSlug = session.user.name.toLowerCase().replace(/\s+/g, '');
-    const chatbotSlug = chatbotTitle.trim().toLowerCase().replace(/\s+/g, '-');
-    const shareUrl = `${userSlug}/${chatbotSlug}`;
+    setIsProcessing(true);
     
-    const newChatbot = {
-      id: Date.now(),
-      shareId: shareUrl,
-      name: chatbotTitle.trim(),
-      data: uploadedFile.content,
-      // Store first 10 words separately for testing
-      firstWords: uploadedFile.content.split(' ').slice(0, 10).join(' ')
-    };
-    
-    setChatbots(prev => [...prev, newChatbot]);
-    // Store in localStorage for testing
-    localStorage.setItem(shareUrl, JSON.stringify(newChatbot));
-    
-    setUploadedFile(null);
-    setChatbotTitle('');
-    setIsUploading(false);
+    try {
+      // Create URL-friendly IDs
+      const userSlug = session.user.name.toLowerCase().replace(/\s+/g, '');
+      const chatbotSlug = chatbotTitle.trim().toLowerCase().replace(/\s+/g, '-');
+      const shareUrl = `${userSlug}/${chatbotSlug}`;
+      
+      const newChatbot = {
+        id: Date.now(),
+        shareId: shareUrl,
+        name: chatbotTitle.trim(),
+        data: uploadedFile.content,
+        processedChunks: [], // Initialize empty array for processed chunks
+        firstWords: uploadedFile.content.split(' ').slice(0, 10).join(' ')
+      };
+      
+      setChatbots(prev => [...prev, newChatbot]);
+      localStorage.setItem(shareUrl, JSON.stringify(newChatbot));
+      
+      setUploadedFile(null);
+      setChatbotTitle('');
+      setIsUploading(false);
+    } catch (error) {
+      console.error('Error creating chatbot:', error);
+      alert('Failed to create chatbot. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleChatbotClick = (botId) => {
@@ -213,7 +224,13 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4">
           <button 
             className="w-full bg-blue-500 text-white rounded-md py-2 mb-4 hover:bg-blue-600 transition-colors"
-            onClick={() => setIsUploading(true)}
+            onClick={() => {
+              setUploadedFile(null);  // Reset uploaded file
+              setChatbotTitle('');    // Reset title
+              setIsUploading(true);   // Show upload interface
+              setView(null);          // Reset view
+              setSelectedChatbot(null); // Deselect current chatbot
+            }}
           >
             + New Chatbot
           </button>
@@ -329,11 +346,18 @@ export default function Home() {
                   />
                 </div>
                 <button 
-                  className="mt-4 bg-green-500 text-white rounded-md py-2 px-4 hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`mt-4 bg-green-500 text-white rounded-md py-2 px-4 hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
                   onClick={handleCreateChatbot}
-                  disabled={!chatbotTitle.trim()}
+                  disabled={!chatbotTitle.trim() || isProcessing}
                 >
-                  Create Chatbot
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      Processing Document...
+                    </>
+                  ) : (
+                    'Create Chatbot'
+                  )}
                 </button>
               </div>
             ) : view === 'document' ? (
@@ -342,12 +366,18 @@ export default function Home() {
                   {chatbots.find(b => b.id === selectedChatbot)?.name}
                 </h2>
                 <div className="flex-1 flex flex-col min-h-0">
-                  <pre 
-                    className="flex-1 whitespace-pre-wrap text-sm text-gray-600 bg-gray-50 p-4 rounded-md overflow-y-auto h-full"
-                    style={{ maxHeight: 'calc(100vh - 200px)' }}
-                  >
-                    {chatbots.find(b => b.id === selectedChatbot)?.data}
-                  </pre>
+                  <DocumentView 
+                    document={chatbots.find(b => b.id === selectedChatbot)?.data}
+                    processedChunks={chatbots.find(b => b.id === selectedChatbot)?.processedChunks}
+                    onChunksProcessed={(newChunks) => {
+                      // Update the chatbot with processed chunks
+                      setChatbots(prev => prev.map(bot => 
+                        bot.id === selectedChatbot 
+                          ? { ...bot, processedChunks: newChunks }
+                          : bot
+                      ));
+                    }}
+                  />
                 </div>
               </div>
             ) : view === 'chat' ? (
