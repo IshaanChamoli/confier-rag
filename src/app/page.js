@@ -369,8 +369,10 @@ export default function Home() {
                   <DocumentView 
                     document={chatbots.find(b => b.id === selectedChatbot)?.data}
                     processedChunks={chatbots.find(b => b.id === selectedChatbot)?.processedChunks}
+                    chatbotName={chatbots.find(b => b.id === selectedChatbot)?.name}
+                    userName={session.user.name}
+                    userEmail={session.user.email}
                     onChunksProcessed={(newChunks) => {
-                      // Update the chatbot with processed chunks
                       setChatbots(prev => prev.map(bot => 
                         bot.id === selectedChatbot 
                           ? { ...bot, processedChunks: newChunks }

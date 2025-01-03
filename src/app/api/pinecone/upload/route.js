@@ -3,7 +3,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 
 export async function POST(request) {
   try {
-    const { vectors } = await request.json();
+    const { vectors, chatbotName, userName, userEmail } = await request.json();
 
     if (!vectors || !Array.isArray(vectors)) {
       return NextResponse.json(
@@ -12,27 +12,29 @@ export async function POST(request) {
       );
     }
 
-    // Initialize Pinecone client (new simplified way)
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
 
-    // Get the index directly
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
-    // Format vectors for Pinecone with additional metadata
+    // Format vectors with enhanced metadata
     const pineconeVectors = vectors.map((vec, i) => ({
-      id: `chunk_${Date.now()}_${i}`, // Unique ID with timestamp
+      id: `chunk_${Date.now()}_${i}`,
       values: vec.embedding,
       metadata: {
         text: vec.text,
         chunkIndex: i,
         timestamp: new Date().toISOString(),
-        source: 'chatbot-training'
+        source: 'chatbot-training',
+        userName: userName,
+        userEmail: userEmail,
+        chatbotName: chatbotName,
+        shareId: `${userName.toLowerCase().replace(/\s+/g, '')}/${chatbotName.toLowerCase().replace(/\s+/g, '-')}`
       },
     }));
 
-    // Upsert vectors to Pinecone in batches of 100
+    // Upsert vectors in batches
     const batchSize = 100;
     for (let i = 0; i < pineconeVectors.length; i += batchSize) {
       const batch = pineconeVectors.slice(i, i + batchSize);

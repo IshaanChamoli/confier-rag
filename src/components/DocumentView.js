@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-export default function DocumentView({ document, processedChunks: existingChunks, onChunksProcessed }) {
+export default function DocumentView({ document, processedChunks: existingChunks, onChunksProcessed, chatbotName, userName, userEmail }) {
   const [chunks, setChunks] = useState([]);
   const [processedChunks, setProcessedChunks] = useState(existingChunks || []);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -87,7 +87,12 @@ export default function DocumentView({ document, processedChunks: existingChunks
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ vectors: processedChunks }),
+        body: JSON.stringify({ 
+          vectors: processedChunks,
+          chatbotName,
+          userName,
+          userEmail,
+        }),
       });
 
       const data = await response.json();
